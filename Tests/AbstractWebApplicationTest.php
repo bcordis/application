@@ -13,6 +13,7 @@ use Joomla\Event\DispatcherInterface;
 use Joomla\Input\Input;
 use Joomla\Registry\Registry;
 use Joomla\Test\TestHelper;
+use Laminas\Diactoros\Response;
 use Laminas\Diactoros\Response\TextResponse;
 use PHPUnit\Framework\TestCase;
 
@@ -624,6 +625,57 @@ class AbstractWebApplicationTest extends TestCase
 
         // Ensure that no compression headers were set.
         $this->assertEmpty($object->getHeaders());
+    }
+
+    /**
+     * @testdox  A 204 response sends no body and no Content-Type header, per RFC 9110 §15.3.5.
+     *
+     * @covers   \Joomla\Application\AbstractWebApplication
+     * @uses     \Joomla\Application\AbstractApplication
+     * @uses     \Joomla\Application\Web\WebClient
+     */
+    public function testRespondWithNoContentStatusSendsNoBodyOrContentType()
+    {
+        $response = new Response('php://memory', 204);
+        $object   = $this->getMockForAbstractClass(AbstractWebApplication::class, [null, null, null, $response]);
+        $object->setBody('this must never be echoed');
+
+        $this->expectOutputString('');
+
+        TestHelper::invoke($object, 'respond');
+
+        foreach ($object->getHeaders() as $header) {
+            $this->assertNotSame('Content-Type', $header['name'], 'a 204 has no representation, so no Content-Type');
+        }
+    }
+
+    /**
+     * @testdox  A 304 response sends no body, but keeps its representation metadata headers, per RFC 9110 §15.4.5.
+     *
+     * @covers   \Joomla\Application\AbstractWebApplication
+     * @uses     \Joomla\Application\AbstractApplication
+     * @uses     \Joomla\Application\Web\WebClient
+     */
+    public function testRespondWithNotModifiedStatusSendsNoBodyButKeepsContentType()
+    {
+        $response = new Response('php://memory', 304);
+        $object   = $this->getMockForAbstractClass(AbstractWebApplication::class, [null, null, null, $response]);
+        $object->setBody('this must never be echoed');
+
+        $this->expectOutputString('');
+
+        TestHelper::invoke($object, 'respond');
+
+        $headers = $object->getHeaders();
+
+        $this->assertSame(
+            [
+                'name'  => 'Content-Type',
+                'value' => 'text/html; charset=utf-8',
+            ],
+            $headers[0],
+            'a 304 still describes the representation it is validating, only the body is withheld'
+        );
     }
 
     /**
